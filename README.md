@@ -7,7 +7,7 @@ This project builds on my work on ML-based intrusion detection with network flow
 ## Architecture
 
 ```mermaid
-flowchart LR
+flowchart TB
     CSV[(ToN-IoT CSV)] --> P[replay/producer.py<br/>event time, duplicates,<br/>late events]
     P -->|netflows.raw<br/>3 partitions, key = src_ip| K1[[Kafka]]
     K1 --> J1[Flink job 1<br/>dedup on event_id]
