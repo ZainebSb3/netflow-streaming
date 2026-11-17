@@ -34,7 +34,7 @@ logs:
 	docker compose logs -f --tail=50
 
 down:            ## stop everything (keeps nothing: no volumes are declared)
-	docker compose down
+	docker compose down -v
 
 clean: down
 	rm -rf bench/runs .pytest_cache
