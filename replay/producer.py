@@ -43,7 +43,7 @@ def iter_rows(csv_path: Path, loop: bool):
     """Yield (pass_number, row_number, row) — loops over the file if asked."""
     pass_no = 0
     while True:
-        with csv_path.open(newline="") as f:
+        with csv_path.open(newline="", encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
             check_columns(reader.fieldnames)
             for row_no, row in enumerate(reader):
