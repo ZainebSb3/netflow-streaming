@@ -1,6 +1,7 @@
-CSV  ?= data/train_test_network.csv
-RATE ?= 500
-PY   := .venv/bin/python
+CSV      ?= data/train_test_network.csv
+RATE     ?= 500
+DURATION ?= 0
+PY       := .venv/bin/python
 
 .PHONY: venv up jobs replay test test-e2e bench psql logs down clean
 
@@ -15,8 +16,8 @@ jobs:            ## submit the two Flink SQL jobs (once the UI answers on :8081)
 	docker compose exec -T jobmanager ./bin/sql-client.sh -f /opt/flink/sql/01_dedup.sql
 	docker compose exec -T jobmanager ./bin/sql-client.sh -f /opt/flink/sql/02_window_agg.sql
 
-replay:          ## replay the dataset into Kafka (RATE records/s)
-	$(PY) -m replay.producer --csv $(CSV) --rate $(RATE)
+replay:          ## replay the dataset into Kafka (RATE records/s, DURATION s; 0 = whole file)
+	$(PY) -m replay.producer --csv $(CSV) --rate $(RATE) --duration-s $(DURATION)
 
 test:            ## unit tests (no infrastructure needed)
 	$(PY) -m pytest -q
@@ -33,7 +34,7 @@ psql:            ## open a SQL shell on the results
 logs:
 	docker compose logs -f --tail=50
 
-down:            ## stop everything (keeps nothing: no volumes are declared)
+down:            ## stop everything and delete the checkpoint volume
 	docker compose down -v
 
 clean: down
