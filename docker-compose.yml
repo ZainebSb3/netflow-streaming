@@ -1,0 +1,92 @@
+name: netflow-streaming
+
+x-flink-image: &flink-image
+  build: ./flink
+  image: netflow-streaming/flink:1.19.1
+
+services:
+  kafka:
+    image: apache/kafka:3.8.1
+    hostname: kafka
+    ports:
+      - "9092:9092"   # EXTERNAL listener, used by the producer and tests on the host
+    environment:
+      CLUSTER_ID: q1Sh-9_ISia_zwGINzRvyQ
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller          # KRaft: no ZooKeeper
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: INTERNAL://:29092,EXTERNAL://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"        # topics are created explicitly by kafka-init
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:29092 > /dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+  kafka-init:
+    image: apache/kafka:3.8.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    # 3 partitions per topic, key = src_ip; 1-day retention is enough for replays.
+    command:
+      - >-
+        for t in netflows.raw netflows.dedup; do
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists
+        --topic $$t --partitions 3 --replication-factor 1 --config retention.ms=86400000 || exit 1;
+        done
+    restart: "no"
+
+  postgres:
+    image: postgres:16
+    ports:
+      - "5433:5432"   # 5433 on the host to avoid clashing with a local PostgreSQL
+    environment:
+      POSTGRES_DB: netflows
+      POSTGRES_USER: flink
+      POSTGRES_PASSWORD: flink   # local demo credentials only
+    volumes:
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flink -d netflows"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  jobmanager:
+    <<: *flink-image
+    command: jobmanager
+    ports:
+      - "8081:8081"   # Flink web UI
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./flink/sql:/opt/flink/sql:ro
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: jobmanager
+        rest.address: jobmanager
+        parallelism.default: 1
+
+  taskmanager:
+    <<: *flink-image
+    command: taskmanager
+    depends_on:
+      - jobmanager
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        parallelism.default: 1
