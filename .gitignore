@@ -1,0 +1,12 @@
+# dataset (not redistributed, see README)
+data/*
+!data/.gitkeep
+# local replay summaries
+bench/runs/
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# editors
+.vscode/
